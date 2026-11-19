@@ -20,7 +20,6 @@ AGENT_PLIST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
 # Optional extras, fetched from their own projects (never bundled here).
 ADBLOCK_URL="https://raw.githubusercontent.com/rxri/spicetify-extensions/main/adblock/adblock.js"
 SPICY_LYRICS_URL="https://raw.githubusercontent.com/Spikerko/spicy-lyrics/main/builds/spicy-lyrics.mjs"
-MARKETPLACE_INSTALL_URL="https://raw.githubusercontent.com/spicetify/marketplace/main/resources/install.sh"
 
 # ── Options ──────────────────────────────────────────────────────────────────
 ACTION="install"; ASSUME_YES=0; LAUNCH=1; AUTO_REAPPLY=1; BLOCK_UPDATES=0
@@ -107,12 +106,21 @@ quit_spotify() {
   pkill -x Spotify >/dev/null 2>&1 || true; sleep 1
 }
 # -g: don't bring Spotify to the front (never steal focus, e.g. from a game).
-launch_spotify() { open -g -a "$SPOTIFY_APP" --args ${SPOTIFY_ARGS:-} >/dev/null 2>&1 || true; }
+# open can block (e.g. behind a Gatekeeper prompt), so never wait on it.
+# shellcheck disable=SC2086  # SPOTIFY_ARGS is a list of flags
+launch_spotify() { (open -g -a "$SPOTIFY_APP" --args ${SPOTIFY_ARGS:-} >/dev/null 2>&1 &) ; }
 
 install_spotify() {
   step "Installing Spotify"
   if command -v brew >/dev/null 2>&1; then
-    brew install --cask spotify && return 0
+    if brew install --cask spotify; then
+      # Homebrew marks downloads as quarantined, so macOS would stop Spotify's first launch to ask
+      # "downloaded from the Internet, open it?". The user just asked us to install it, and the
+      # direct download below isn't quarantined either, so clear the flag on the app we installed.
+      local app; app="$(find_spotify || true)"
+      [ -n "$app" ] && xattr -dr com.apple.quarantine "$app" 2>/dev/null || true
+      return 0
+    fi
     warn "Homebrew install failed; downloading from Spotify instead."
   fi
   local dmg url tmp mnt dest="/Applications"
@@ -344,6 +352,7 @@ remove_agent() {
 
 # ── Check ────────────────────────────────────────────────────────────────────
 do_check() {
+  # shellcheck disable=SC2034  # sdir/xpui are used inside the eval'd check expressions
   local bad=0 sdir xpui
   check() { if eval "$2"; then ok "$1"; else printf '  %s✗%s %s\n' "$R" "$N" "$1"; bad=1; fi; }
   printf '%sSpotify Cupertino %s: check%s\n' "$B" "$VERSION" "$N"

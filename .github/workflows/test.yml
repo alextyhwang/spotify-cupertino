@@ -36,7 +36,8 @@ jobs:
         if: matrix.scenario == 'existing-spicetify'
         run: |
           brew install --cask spotify
-          open -g -a Spotify; for i in $(seq 1 90); do [ -f "$HOME/Library/Application Support/Spotify/prefs" ] && break; sleep 1; done
+          xattr -dr com.apple.quarantine /Applications/Spotify.app || true
+          (open -g /Applications/Spotify.app &); for i in $(seq 1 90); do [ -f "$HOME/Library/Application Support/Spotify/prefs" ] && break; sleep 1; done
           sleep 3; osascript -e 'quit app "Spotify"' || true; sleep 3
           brew install spicetify-cli
           spicetify config >/dev/null 2>&1 || true
