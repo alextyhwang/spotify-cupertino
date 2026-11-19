@@ -1,0 +1,83 @@
+name: Test installer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install shellcheck
+      - run: shellcheck -S warning install.sh
+      - run: bash -n install.sh
+      - run: node --check theme/theme.js && node --check extensions/spotify-perf.js && node --check extensions/disable-canvas.js
+
+  install:
+    name: ${{ matrix.scenario }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+        scenario: [fresh-homebrew, fresh-dmg, existing-spicetify]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fresh Mac without Homebrew (hide brew from PATH)
+        if: matrix.scenario == 'fresh-dmg'
+        run: echo "PATH=/usr/bin:/bin:/usr/sbin:/sbin" >> "$GITHUB_ENV"
+
+      - name: Existing Spicetify user (official installer, stock apply)
+        if: matrix.scenario == 'existing-spicetify'
+        run: |
+          brew install --cask spotify
+          open -g -a Spotify; for i in $(seq 1 90); do [ -f "$HOME/Library/Application Support/Spotify/prefs" ] && break; sleep 1; done
+          sleep 3; osascript -e 'quit app "Spotify"' || true; sleep 3
+          brew install spicetify-cli
+          spicetify config >/dev/null 2>&1 || true
+          spicetify backup apply -n
+          spicetify config extensions bookmark.js
+          spicetify apply -n
+          grep -E "current_theme|extensions" "$(spicetify -c)"
+
+      - name: Install (all extras)
+        run: ./install.sh --yes --with-spicy-lyrics --with-marketplace --with-adblock --no-launch
+
+      - name: Check
+        run: ./install.sh --check
+
+      - name: Installed state
+        run: |
+          SP="$HOME/.spicetify/spicetify"; command -v spicetify && SP=spicetify
+          cfg="$("$SP" -c)"; grep -E "current_theme|color_scheme|extensions|custom_apps|inject_theme_js" "$cfg"
+          xpui="$(ls -d /Applications/Spotify.app/Contents/Resources/Apps/xpui ~/Applications/Spotify.app/Contents/Resources/Apps/xpui 2>/dev/null | head -1)"
+          ls "$xpui/extensions"
+          for f in theme.js spotify-perf.js disable-canvas.js adblock.js spicy-lyrics.mjs; do test -f "$xpui/extensions/$f" || { echo "missing $f"; exit 1; }; done
+          grep -q "gs-sidebar" "$xpui/extensions/theme.js"
+          test -f "$xpui/spicetify-routes-marketplace.js"
+          launchctl print "gui/$(id -u)/com.github.alextyhwang.spotify-cupertino" | head -5
+          if [ "${{ matrix.scenario }}" = existing-spicetify ]; then grep -q "bookmark.js" "$cfg" || { echo "existing extension was dropped"; exit 1; }; fi
+          defaults read /Applications/Spotify.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || defaults read ~/Applications/Spotify.app/Contents/Info.plist CFBundleShortVersionString
+
+      - name: Run again (idempotent)
+        run: ./install.sh --yes --no-launch && ./install.sh --check
+
+      - name: Uninstall
+        run: |
+          ./install.sh --uninstall
+          xpui="$(ls -d /Applications/Spotify.app/Contents/Resources/Apps/xpui ~/Applications/Spotify.app/Contents/Resources/Apps/xpui 2>/dev/null | head -1)"
+          ! test -f "$HOME/Library/LaunchAgents/com.github.alextyhwang.spotify-cupertino.plist"
+          ! grep -q "spotify-perf.js" "$xpui/index.html" 2>/dev/null
+          ! test -d "$HOME/.config/spicetify/Themes/SpotifyCupertino"
+          if ./install.sh --check; then echo "check should fail after uninstall"; exit 1; fi
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          cat ~/.spotify-cupertino/reapply.log 2>/dev/null || true
+          cat "$HOME/.config/spicetify/config-xpui.ini" 2>/dev/null || true

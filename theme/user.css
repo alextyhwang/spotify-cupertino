@@ -1,0 +1,528 @@
+/* Glassify Sidebar: a sidebar-only, macOS-style take on Glassify for Spicetify.
+   Layout: a flush, full-height sidebar (window buttons sit on it, no card border) next to a
+   flush content area, like Finder or Music. Light glass: translucent surfaces over one static,
+   blurred copy of the current album art. No backdrop-filter and no animated background, so the
+   backdrop repaints only when the song changes.
+   Player styles (html class, picked in the profile menu): gs-player-bar (default),
+   gs-player-float, gs-player-side. */
+
+:root {
+  --g-bg: #0e0e10;
+  --g-side: rgba(34, 34, 38, 0.55);       /* sidebar: lighter, more see-through */
+  --g-content: rgba(18, 18, 20, 0.74);    /* content: darker, calmer */
+  --g-bar: rgba(26, 26, 29, 0.86);
+  --g-float: rgba(38, 38, 42, 0.97); /* no live blur (GPU cost), so near-opaque for legibility */
+  --g-panel-strong: rgba(24, 24, 27, 0.94);
+  --g-edge: rgba(255, 255, 255, 0.08);
+  --g-hairline: rgba(255, 255, 255, 0.07);
+  --g-hover: rgba(255, 255, 255, 0.06);
+  --g-press: rgba(255, 255, 255, 0.1);
+  --g-text: #f5f5f7;
+  --g-sub: #a1a1a6;
+  --g-accent: #0a84ff;
+  --gs-side-w: 232px;
+  --g-art: none; /* set by theme.js */
+}
+/* Small windows (Spotify's 800 px minimum): a narrower sidebar leaves more for content. */
+@media (max-width: 760px) { :root { --gs-side-w: 200px; } }
+
+/* ── Type: SF Pro, Apple's scale ─────────────────────────────────────────────
+   Spotify runs on Chromium, where -apple-system is not SF Pro (it fell back to a narrower
+   face). system-ui is real SF Pro, and Chromium applies its optical sizes and size-specific
+   tracking itself (widths match native AppKit text), so no hand-tuned letter-spacing.
+   Sizes and weights follow macOS: 13 px body, 11-12 px secondary, bold titles (never
+   heavy/black), semibold instead of bold for emphasis in running text. */
+:root, .encore-layout-themes, .encore-medium-devices-theme, .encore-small-devices-theme {
+  --encore-title-font-stack: system-ui, sans-serif !important;
+  --encore-body-font-stack: system-ui, sans-serif !important;
+  --encore-variable-font-stack: system-ui, sans-serif !important;
+  --encore-text-size-smaller-2: 11px !important; /* marginal: captions, durations */
+  --encore-text-size-smaller: 12px !important;   /* body small: subtitles, artists */
+  --encore-text-size-base: 13px !important;      /* body */
+  --encore-text-size-large: 15px !important;
+  --encore-text-size-larger: 20px !important;    /* title small: Home section headings */
+  --encore-text-size-larger-2: 22px !important;
+  --encore-text-size-larger-3: 26px !important;
+  --encore-text-size-larger-4: 28px !important;
+  --encore-text-size-larger-5: 30px !important;
+}
+body, button, input, textarea, [class*="encore-text"] {
+  font-family: system-ui, BlinkMacSystemFont, sans-serif !important;
+}
+body { -webkit-font-smoothing: antialiased; }
+.encore-text-body-medium-bold, .encore-text-body-small-bold, .encore-text-marginal-bold { font-weight: 600 !important; }
+.encore-text-headline-large, .encore-text-headline-medium { font-weight: 700 !important; }
+[class*="encore-text-title"], [class*="encore-text-headline"] { line-height: 1.2 !important; }
+/* Playlist/album/artist title: Spotify fits it up to 96 px with an inline size. */
+.main-entityHeader-title h1, .main-entityHeader-title .encore-text-headline-large {
+  font-size: 30px !important; line-height: 1.15 !important; white-space: normal !important;
+}
+/* Spotify sets body min-width/height to its 800x600 window minimum; at zoom > 100% that is
+   larger than the window itself and clips the right edge and the player. */
+body { min-width: 0 !important; min-height: 0 !important; }
+
+/* ── Backdrop ─────────────────────────────────────────────────────────────── */
+.Root__top-container {
+  background: var(--g-bg) !important;
+  isolation: isolate;
+  gap: 0 !important;
+  padding: 0 !important;
+}
+.Root__top-container::before {
+  content: "";
+  position: fixed;
+  inset: -12%;
+  z-index: -1;
+  background: var(--g-art) center / cover no-repeat;
+  filter: blur(64px) saturate(1.5) brightness(0.55);
+  transform: translateZ(0); /* own layer: content repaints never re-blur it */
+  contain: strict;
+  pointer-events: none;
+}
+
+/* ── Layout: flush surfaces, hairline dividers ────────────────────────────── */
+.Root__nav-bar,
+.Root__main-view,
+.Root__right-sidebar > *,
+.Root__now-playing-bar {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  overflow: hidden;
+}
+.Root__nav-bar {
+  width: var(--gs-side-w) !important;
+  min-width: var(--gs-side-w) !important;
+  max-width: var(--gs-side-w) !important;
+  background: var(--g-side) !important;
+  box-shadow: inset -1px 0 0 var(--g-hairline) !important;
+}
+.Root__main-view { min-width: 0 !important; background: var(--g-content) !important; }
+.Root__right-sidebar > * { background: var(--g-content) !important; box-shadow: inset 1px 0 0 var(--g-hairline) !important; }
+
+/* Pages paint their own copy of the base colour (artist pages, the search "Top result" card,
+   the queue). Set on the panels only: nested Encore colour sets (the blue play button, white
+   chips, E badges) redefine --background-base for their own content and must keep it. */
+.Root__main-view,
+.Root__right-sidebar {
+  --background-base: transparent !important;
+  --spice-player: rgba(255, 255, 255, 0.05) !important;
+}
+.main-home-homeHeader,
+.main-entityHeader-backgroundColor,
+.main-entityHeader-overlay,
+.main-actionBarBackground-background,
+.playlist-playlist-actionBarBackground-background {
+  background: transparent !important;
+  background-image: none !important;
+}
+.main-trackList-trackListHeader[data-sticky="true"],
+.main-trackList-trackListHeader.main-trackList-stickyHeader,
+.main-entityHeader-sticky,
+.main-actionBar-ActionBarRow[data-sticky],
+.main-topBar-background {
+  background-color: var(--g-panel-strong) !important;
+}
+.x-explicit-label { color: #1c1c1e !important; } /* its letter used the now-transparent base colour */
+
+/* ── No top bar ───────────────────────────────────────────────────────────
+   The bar collapses to 0 px and is hidden; Spotify's own back/forward, search box, account
+   button and Friend Activity stay visible, placed over the sidebar's slots (positions come
+   from theme.js as --gs-* variables). */
+.Root__globalNav {
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  visibility: hidden;
+  z-index: 20;
+}
+/* Window dragging stays on the sidebar's empty top strip only. */
+.body-drag-top { width: var(--gs-side-w) !important; height: var(--gs-titlebar, 49px) !important; }
+/* Anything clickable must opt out of window dragging, or macOS treats the click as a drag
+   (and a double-click zooms the window). */
+#gs-sidebar button,
+.main-globalNav-historyButtons,
+.main-globalNav-searchInputSection,
+.main-topBar-topbarContentRight,
+.Root__now-playing-bar,
+.Root__main-view {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Back / forward: right of the window buttons, centred on their line (theme.js sets the
+   title bar so the buttons sit 20 pt from the top and the left). */
+.main-globalNav-historyButtons {
+  visibility: visible;
+  position: fixed !important;
+  top: calc(var(--gs-titlebar, 49px) / 2 - 14px);
+  left: calc(var(--gs-side-w) - 66px);
+  height: 28px !important;
+  gap: 2px;
+  align-items: center;
+}
+.main-globalNav-historyButtons button {
+  width: 28px !important; height: 28px !important; min-height: 0 !important; padding: 0 !important;
+  color: var(--g-sub) !important;
+}
+.main-globalNav-historyButtons button svg { width: 16px !important; height: 16px !important; }
+
+/* Search suggestions (Spotify's "enableSearchSuggestions" flag): the dropdown is as wide as
+   the input by default, which in the sidebar truncates every result. Let it float wider. */
+.main-globalNav-searchInputSection [role="listbox"] {
+  width: 380px !important; max-width: calc(100vw - 24px);
+  box-shadow: none !important; background: transparent !important;
+}
+/* Spotify's wrapper is transparent; the visible card is its child, offset 4 px with an 8 px
+   radius. Style only the card: 6 px below the field, the field's left edge, 12 px corners. */
+.main-globalNav-searchInputSection [role="listbox"] > div {
+  top: 0 !important; margin-top: 6px !important;
+  border-radius: 12px !important;
+  background: rgb(38, 38, 42) !important; /* opaque: even 3% lets white text behind show through */
+  box-shadow: 0 0 0 .5px var(--g-edge), 0 12px 32px rgba(0, 0, 0, .45) !important;
+}
+/* Search box in the sidebar */
+.main-globalNav-searchInputSection {
+  visibility: visible;
+  position: fixed !important;
+  top: var(--gs-search-top, 51px) !important;
+  left: var(--gs-search-left, 12px);
+  width: var(--gs-search-width, 208px);
+  height: 30px !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center;
+}
+.main-globalNav-searchInputSection > form { flex: 1; }
+.Root__globalNav form[role="search"],
+.Root__globalNav form[role="search"] > div { height: 30px !important; background: transparent !important; background-image: none !important; }
+.Root__globalNav form[role="search"] > [class*="form-input-icon__icon"] {
+  height: 30px !important; width: 30px !important; top: 0 !important; transform: none !important;
+  align-items: center !important; justify-content: center !important; color: var(--g-sub) !important;
+}
+.Root__globalNav form[role="search"] > [class*="form-input-icon__icon"] svg { transform: scale(0.75); }
+.Root__globalNav form[role="search"] > [class*="form-input-icon__icon--trailing"],
+.Root__globalNav form[role="search"] kbd { display: none !important; }
+.Root__globalNav input.main-topBar-searchBar {
+  height: 30px !important; block-size: 30px !important; min-block-size: 0 !important;
+  padding-block: 0 !important; padding-inline: 30px 8px !important;
+  border-radius: 8px !important; font-size: 13px !important;
+  background: rgba(255, 255, 255, 0.08) !important; border: 0 !important; box-shadow: none !important;
+}
+.Root__globalNav input.main-topBar-searchBar::placeholder { color: var(--g-sub); }
+
+/* Account + Friend Activity in the sidebar footer */
+.main-topBar-topbarContentRight {
+  visibility: visible;
+  position: fixed !important;
+  top: var(--gs-account-top, 600px);
+  left: var(--gs-account-left, 12px);
+  height: 32px !important;
+  gap: 4px;
+  align-items: center;
+  flex-direction: row-reverse; /* avatar first, then Friend Activity */
+}
+/* Spotify drops these at narrow widths; in the sidebar there is room. */
+.main-topBar-topbarContentRight .main-actionButtons { display: flex !important; gap: 0; }
+.main-topBar-topbarContentRight button[aria-label="What's New"] { display: none !important; }
+.main-topBar-topbarContentRight button[aria-label="Friend Activity"] {
+  display: flex !important;
+  width: 32px !important; height: 32px !important; min-width: 32px !important; padding: 0 !important;
+  border-radius: 8px !important; background: transparent !important; color: var(--g-sub) !important;
+}
+.main-topBar-topbarContentRight button[aria-label="Friend Activity"]:hover { background: var(--g-hover) !important; color: var(--g-text) !important; }
+.main-topBar-topbarContentRight button[aria-label="Friend Activity"] svg { width: 16px !important; height: 16px !important; }
+.main-topBar-topbarContentRight button[data-testid="user-widget-link"] {
+  width: 30px !important; height: 30px !important; min-width: 30px !important; padding: 1px !important;
+  border-radius: 50% !important; background: rgba(255, 255, 255, 0.08) !important;
+}
+.main-topBar-topbarContentRight figure,
+.main-topBar-topbarContentRight figure > div,
+.main-topBar-topbarContentRight figure img { width: 28px !important; height: 28px !important; border-radius: 50% !important; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.Root__nav-bar > :not(#gs-sidebar) { display: none !important; } /* native library + resizer */
+#gs-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0 10px 8px;
+  color: var(--g-text);
+  font-size: 13px;
+}
+#gs-sidebar .gs-side-top { flex: none; height: var(--gs-titlebar, 49px); } /* window buttons + back/forward */
+#gs-sidebar .gs-search-slot { flex: none; height: 30px; margin: 2px 0 10px; } /* same edges as the nav rows */
+#gs-sidebar .gs-nav { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; scrollbar-width: none; }
+#gs-sidebar .gs-section {
+  margin: 14px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--g-sub);
+}
+#gs-sidebar .gs-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--g-text);
+  font: inherit;
+  text-align: left;
+  cursor: default; /* macOS sidebars don't use the pointing hand */
+}
+#gs-sidebar .gs-item svg,
+#gs-sidebar .gs-icon-btn svg { width: 16px; height: 16px; flex: none; color: var(--g-accent); }
+#gs-sidebar .gs-item:hover { background: var(--g-hover); }
+#gs-sidebar .gs-item:active { background: var(--g-press); }
+#gs-sidebar .gs-item.is-active { background: rgba(255, 255, 255, 0.12); }
+#gs-sidebar .gs-side-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 4px 2px 0;
+}
+#gs-sidebar .gs-account-slot { width: 70px; height: 32px; }
+#gs-sidebar .gs-icon-btn {
+  display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: 8px; background: transparent; cursor: default;
+}
+#gs-sidebar .gs-icon-btn svg { color: var(--g-sub); }
+#gs-sidebar .gs-icon-btn:hover { background: var(--g-hover); }
+#gs-sidebar .gs-icon-btn.is-active svg { color: var(--g-accent); }
+#gs-sidebar button:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 1px; }
+
+/* Spotify's own lyrics button is redundant when Spicy Lyrics / Beautiful Lyrics is installed */
+html.gs-has-lyrics-ext .Root__now-playing-bar [data-testid="lyrics-button"] { display: none !important; }
+
+/* ── Home: "Your Playlists" grid (from the old sidebar) ─────────────────── */
+/* Home's content is a wrapping flex row; its sections are full width inside its padding. */
+#gs-home-playlists { flex: 0 0 100%; width: 100%; margin: 8px 0 28px; color: var(--g-text); }
+#gs-home-playlists .gs-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 12px; }
+#gs-home-playlists .gs-h2 { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.2; color: var(--g-text); }
+#gs-home-playlists .gs-more {
+  padding: 4px 10px; border: 0; border-radius: 12px; background: transparent;
+  color: var(--g-sub); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+#gs-home-playlists .gs-more:hover { background: var(--g-hover); color: var(--g-text); }
+#gs-home-playlists .gs-tile[hidden] { display: none; } /* collapsed: theme.js keeps two full rows */
+#gs-home-playlists .gs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 16px 14px;
+}
+#gs-home-playlists .gs-tile {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  padding: 0; border: 0; background: transparent; color: var(--g-text);
+  font: inherit; text-align: left; cursor: pointer;
+}
+#gs-home-playlists .gs-tile-art {
+  display: grid; place-items: center; aspect-ratio: 1; width: 100%; overflow: hidden;
+  border-radius: 8px; background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform 160ms cubic-bezier(.2,.8,.2,1);
+}
+#gs-home-playlists .gs-tile-art img { width: 100%; height: 100%; object-fit: cover; }
+#gs-home-playlists .gs-tile-art svg { width: 36%; height: 36%; color: var(--g-sub); }
+#gs-home-playlists .gs-liked-art { background: linear-gradient(135deg, #4b2fd8, #8ec5e6); }
+#gs-home-playlists .gs-liked-art svg { color: #fff; fill: #fff; }
+#gs-home-playlists .gs-tile:hover .gs-tile-art { transform: scale(1.02); }
+#gs-home-playlists .gs-tile:active .gs-tile-art { transform: scale(0.98); }
+#gs-home-playlists .gs-tile-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#gs-home-playlists .gs-tile:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 3px; border-radius: 8px; }
+@media (prefers-reduced-motion: reduce) { #gs-home-playlists .gs-tile-art { transition: none; } }
+
+/* Home: no filter chips, no duplicate "recent" grid */
+.main-home-filterChipsSection,
+.main-home-filterChipsContainer,
+.view-homeShortcutsGrid-shortcuts {
+  display: none !important;
+}
+/* ── Page spacing ───────────────────────────────────────────────────────────
+   Every page starts its content 32 px from the sidebar and 32 px from the top of the window,
+   so switching pages never shifts the layout. Spotify drives most padding from
+   --content-spacing (16-24 px); the rest are per-page offsets it keeps for its old 64 px top
+   bar. Hashed class names are pinned to this client version (updates are blocked). */
+:root, .Root__main-view .T0fKO6B7LQSCE_VaSM1P { --content-spacing: 32px !important; }
+/* Home */
+.main-home-content { padding-top: 28px !important; padding-inline: var(--content-spacing) !important; }
+/* Carousels bleed 8 px past the right edge, which gave Home a horizontal scrollbar. */
+.main-home-content { overflow-x: clip !important; }
+#gs-home-playlists { margin-top: 0 !important; }
+/* Playlist, album, Liked Songs: Spotify sizes the header to 30vh and bottom-aligns the art */
+.main-entityHeader-container:not(:has(.main-entityHeader-backgroundImage, [data-testid="background-image"])) {
+  height: auto !important; min-height: 0 !important; max-height: none !important;
+  padding-top: var(--content-spacing) !important;
+}
+/* Browse */
+.T0fKO6B7LQSCE_VaSM1P .contentSpacing > .main-gridContainer-gridContainer > ._YN9HVrnrcvnaCjYnNkM { margin-top: 0 !important; }
+.T0fKO6B7LQSCE_VaSM1P ._YN9HVrnrcvnaCjYnNkM > .AGAj7hr0pC57oadgb75h { margin-top: 8px !important; }
+/* Search results: the sticky filter-chip bar, then results */
+.search-searchCategory-SearchCategory { padding-top: var(--content-spacing) !important; }
+.T0fKO6B7LQSCE_VaSM1P > .contentSpacing > .main-gridContainer-gridContainer > .main-gridContainer-gridContainer:first-child { margin-top: 8px !important; }
+/* What's New (its two top margins collapse into one) */
+.pVVteJIfAdehWU3vX7JR, .pVVteJIfAdehWU3vX7JR > .PNAsPBOgLLv9EX8LZ6xL { margin-top: var(--content-spacing) !important; }
+/* Marketplace: tabs live in the main view's own 64 px header */
+.main-topBar-container:has(.marketplace-tabBar) { padding-top: 17px; height: 81px !important; }
+.marketplace-header { top: 81px !important; }
+
+/* Spotify's own "Your playlists" shelf repeats the grid at the top of Home */
+.main-home-content section[data-testid="component-shelf"][aria-label="Your playlists"] { display: none !important; }
+
+/* "Made for you" video previews: a feed of autoplaying video cards (one decoder and buffer
+   each) whose mixes repeat the "Made For" shelf above it. Hidden. */
+.main-home-content section:has(> .main-shelf-shelfGrid[style*="--row-count"]) { display: none !important; }
+
+/* ── Player (shared) ──────────────────────────────────────────────────────── */
+#SpicyLyrics_PopupLyricsButton,
+button[data-testid="fullscreen-mode-button"] {
+  display: none !important;
+}
+/* Spicy Lyrics forces this one visible with an inline !important, so collapse it instead. */
+.Root__now-playing-bar #SpicyLyrics_FullscreenButton {
+  width: 0 !important; min-width: 0 !important; padding: 0 !important; margin: 0 !important;
+  overflow: hidden !important; opacity: 0 !important; pointer-events: none !important;
+}
+button[data-testid="control-button-playpause"] {
+  background: var(--g-text) !important;
+  color: #111 !important;
+}
+.main-nowPlayingBar-container,
+.main-nowPlayingBar-nowPlayingBar { background: transparent !important; }
+.main-nowPlayingWidget-nowPlaying img,
+.main-coverSlotCollapsed-container { border-radius: 6px !important; }
+
+/* Player style 1 · Bar (default): a flush, full-width bar with a hairline on top. */
+html:not(.gs-player-float):not(.gs-player-side) .Root__now-playing-bar {
+  background: var(--g-bar) !important;
+  box-shadow: inset 0 1px 0 var(--g-hairline) !important;
+  padding: 0 10px 0 0 !important;
+}
+/* Concentric with the window corner: the art sits the same 8 px from the left and bottom
+   edges, and its radius is the window's radius minus that inset. */
+html:not(.gs-player-float):not(.gs-player-side) .main-nowPlayingBar-left { padding-inline-start: 0 !important; }
+html:not(.gs-player-float):not(.gs-player-side) .main-nowPlayingWidget-nowPlaying { padding-inline-start: 8px !important; }
+html:not(.gs-player-float):not(.gs-player-side) .main-nowPlayingWidget-nowPlaying img,
+html:not(.gs-player-float):not(.gs-player-side) .main-coverSlotCollapsed-container {
+  border-radius: max(4px, calc(var(--gs-window-r, 14.6px) - 8px)) !important;
+}
+
+/* Player styles 2 and 3 take the player out of the grid; the sidebar then runs full height. */
+html.gs-player-float .Root__top-container,
+html.gs-player-side .Root__top-container {
+  grid-template-areas:
+    "top-banner top-banner top-banner"
+    "global-nav global-nav global-nav"
+    "left-sidebar main-view right-sidebar"
+    "left-sidebar main-view right-sidebar" !important;
+  grid-template-rows: 0 0 1fr 0 !important;
+}
+
+/* Player style 2 · Floating: a glass capsule over the bottom of the content. */
+html.gs-player-float .Root__now-playing-bar {
+  position: fixed !important;
+  z-index: 10;
+  left: calc(var(--gs-main-left, 232px) + 16px);
+  width: calc(var(--gs-main-width, 600px) - 32px);
+  bottom: 14px;
+  height: 64px;
+  padding: 0 8px !important;
+  border-radius: 18px !important;
+  background: var(--g-float) !important;
+  box-shadow: 0 0 0 1px var(--g-edge), 0 12px 32px rgba(0, 0, 0, 0.35) !important;
+}
+html.gs-player-float .main-nowPlayingBar-container,
+html.gs-player-float .main-nowPlayingBar-nowPlayingBar {
+  height: 64px !important; min-height: 0 !important;
+  width: 100% !important; min-width: 0 !important; max-width: 100% !important;
+}
+/* Spotify sizes the three sections for a full-width bar; let them share the capsule. */
+html.gs-player-float .main-nowPlayingBar-left,
+html.gs-player-float .main-nowPlayingBar-right { flex: 1 1 0 !important; min-width: 0 !important; width: auto !important; }
+html.gs-player-float .main-nowPlayingBar-center { flex: 0 1 44% !important; min-width: 0 !important; width: auto !important; }
+html.gs-player-float .main-nowPlayingBar-extraControls { min-width: 0 !important; justify-content: flex-end; }
+html.gs-player-float .main-coverSlotCollapsed-container,
+html.gs-player-float .main-nowPlayingWidget-nowPlaying img { width: 44px !important; height: 44px !important; }
+/* Concentric with the capsule: 10 px inset all round, radius 18 - 10. */
+html.gs-player-float .Root__now-playing-bar { padding-left: 0 !important; }
+html.gs-player-float .main-nowPlayingBar-left { padding-inline-start: 0 !important; }
+html.gs-player-float .main-nowPlayingWidget-nowPlaying { padding-inline-start: 10px !important; }
+html.gs-player-float .main-coverSlotCollapsed-container,
+html.gs-player-float .main-nowPlayingWidget-nowPlaying img { border-radius: 8px !important; }
+/* Room under the last row of content so the capsule never hides it. */
+html.gs-player-float .main-view-container__scroll-node-child { padding-bottom: 92px; }
+/* Narrow capsule: keep the mute button, drop the volume slider. */
+@media (max-width: 1000px) {
+  html.gs-player-float .main-nowPlayingBar-right .volume-bar [data-testid="volume-bar"],
+  html.gs-player-float .main-nowPlayingBar-right .volume-bar > div:not(:first-child) { display: none !important; }
+}
+
+/* Player style 3 · Sidebar: a compact now-playing card at the bottom of the sidebar. */
+html.gs-player-side .Root__now-playing-bar {
+  position: fixed !important;
+  z-index: 10;
+  left: 10px;
+  width: calc(var(--gs-side-w) - 20px);
+  bottom: 48px; /* above the sidebar footer */
+  height: auto;
+  padding: 10px !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: inset 0 0 0 1px var(--g-edge) !important;
+}
+html.gs-player-side .main-nowPlayingBar-container { height: auto !important; min-height: 0 !important; width: 100% !important; min-width: 0 !important; }
+/* Spotify sizes the inner row for a full-width bar (~620 px); fit it to the card. */
+html.gs-player-side .main-nowPlayingBar-nowPlayingBar,
+html.gs-player-side .player-controls,
+html.gs-player-side .player-controls__buttons,
+html.gs-player-side .playback-bar,
+html.gs-player-side .main-nowPlayingBar-extraControls { width: 100% !important; min-width: 0 !important; max-width: 100% !important; }
+html.gs-player-side .main-nowPlayingBar-nowPlayingBar {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 8px;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+}
+html.gs-player-side .main-nowPlayingBar-left,
+html.gs-player-side .main-nowPlayingBar-center,
+html.gs-player-side .main-nowPlayingBar-right {
+  width: 100% !important; min-width: 0 !important; max-width: none !important; flex: none !important;
+}
+html.gs-player-side .main-nowPlayingWidget-nowPlaying { padding: 0 !important; }
+html.gs-player-side .main-coverSlotCollapsed-container,
+html.gs-player-side .main-nowPlayingWidget-nowPlaying img { width: 40px !important; height: 40px !important; }
+html.gs-player-side .main-nowPlayingBar-right { justify-content: space-between !important; }
+html.gs-player-side .main-nowPlayingBar-extraControls { width: 100%; justify-content: space-between; }
+html.gs-player-side .main-nowPlayingBar-right .volume-bar { flex: 1; min-width: 0 !important; }
+html.gs-player-side .player-controls__buttons { justify-content: space-between !important; gap: 0 !important; }
+/* The sidebar's nav makes room for the card. */
+html.gs-player-side #gs-sidebar .gs-nav { margin-bottom: var(--gs-player-h, 170px); }
+
+/* ── Details ──────────────────────────────────────────────────────────────── */
+.main-card-card, .main-trackList-trackListRow { border-radius: 8px !important; }
+.main-card-card { background: transparent !important; }
+.main-card-card:hover { background: var(--g-hover) !important; }
+#context-menu ul, .main-contextMenu-menu {
+  background: rgba(40, 40, 44, 0.97) !important;
+  border: 1px solid var(--g-edge) !important;
+  border-radius: 10px !important;
+}
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 2px solid var(--g-accent) !important;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .Root__top-container::before { display: none; }
+  .Root__nav-bar { background: #232326 !important; }
+  .Root__main-view, .Root__right-sidebar > * { background: #18181a !important; }
+  .Root__now-playing-bar { background: #1f1f22 !important; }
+}
