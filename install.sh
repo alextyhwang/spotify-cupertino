@@ -361,8 +361,9 @@ do_check() {
   SPICETIFY="$(find_spicetify || true)"
   check "Spicetify installed" '[ -n "$SPICETIFY" ]'
   if [ -n "$SPICETIFY" ] && [ -n "$SPOTIFY_APP" ]; then
+    sdir="$(spice_dir)"
     # shellcheck disable=SC2034  # used inside the eval'd check expressions below
-    sdir="$(spice_dir)"; xpui="$SPOTIFY_APP/Contents/Resources/Apps/xpui"
+    xpui="$SPOTIFY_APP/Contents/Resources/Apps/xpui"
     check "Theme selected ($THEME)" '[ "$(cfg_get current_theme)" = "$THEME" ]'
     check "Theme files present" '[ -f "$sdir/Themes/$THEME/user.css" ] && [ -f "$sdir/Themes/$THEME/theme.js" ]'
     for e in "${OUR_EXTENSIONS[@]}"; do check "Extension enabled: $e" 'has_ext "$e" && [ -f "$sdir/Extensions/$e" ]'; done
